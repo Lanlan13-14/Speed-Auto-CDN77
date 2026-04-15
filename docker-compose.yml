@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  speedtest-proxy:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DEFAULT_NODE=https://sgp.download.datapacket.com/10000mb.bin
+    restart: unless-stopped
