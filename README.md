@@ -59,7 +59,7 @@ curl -L http://localhost:3000/
 ---
 
 手动指定节点
-
+```
 # 新加坡
 curl -L http://localhost:3000/?node=SG
 
@@ -68,26 +68,26 @@ curl -L http://localhost:3000/?node=US-LAX
 
 # 法兰克福
 curl -L http://localhost:3000/?node=DE
-
+```
 
 ---
 
 🔌 API 端点
 
 路径	方法	说明
-
+```
 /	GET	自动选择节点并重定向
 /?node=CODE	GET	手动指定节点
 /health	GET	健康检查
 /nodes	GET	节点列表
 /debug	GET	IP + 地理信息
-
+```
 
 
 ---
 
 📡 节点示例
-
+```
 curl http://localhost:3000/nodes
 
 {
@@ -95,11 +95,7 @@ curl http://localhost:3000/nodes
   "JP": "https://tyo.download.datapacket.com/10000mb.bin",
   "US-LAX": "https://lax.download.datapacket.com/10000mb.bin"
 }
-
-常用节点：
-
-SG  JP  HK  US-LAX  US-NYC  DE  GB  NL
-
+```
 
 ---
 
