@@ -52,9 +52,9 @@ services:
 📖 使用说明
 
 基础用法
-
+```
 curl -L http://localhost:3000/
-
+```
 
 ---
 
