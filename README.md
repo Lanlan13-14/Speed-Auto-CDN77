@@ -35,7 +35,7 @@ docker run -d \
 ---
 
 📦 Docker Compose
-
+```
 services:
   speedtest-proxy:
     image: ghcr.io/lanlan13-14/speedtest-proxy:latest
@@ -45,7 +45,7 @@ services:
       - PORT=3000
       - DEFAULT_NODE=https://sgp.download.datapacket.com/10000mb.bin
     restart: unless-stopped
-
+```
 
 ---
 
@@ -134,7 +134,7 @@ DEFAULT_NODE	默认测速节点	sgp 节点
 ---
 
 🛠️ 项目结构
-
+```
 Speed-Auto-CDN77/
 ├── .github/workflows/
 ├── Dockerfile
@@ -143,13 +143,13 @@ Speed-Auto-CDN77/
 ├── .dockerignore
 ├── .gitignore
 └── README.md
-
+```
 
 ---
 
 📦 镜像
-
+```
 ghcr.io/lanlan13-14/speedtest-proxy:latest
 
-
+```
 ---
