@@ -1,4 +1,4 @@
-const express = require('express);
+const express = require('express');
 const app = express();
 
 // ================== CDN77 / Datapacket 全量测速节点 ==================
