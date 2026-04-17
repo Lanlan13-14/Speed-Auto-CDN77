@@ -22,20 +22,20 @@
 
 🐳 Docker 运行
 
-`bash
+```bash
 docker pull ghcr.io/lanlan13-14/speedtest-proxy:latest
-`
+```
 
-`bash
+```bash
 docker run -d \
   -p 3000:3000 \
   --name speedtest-proxy \
   ghcr.io/lanlan13-14/speedtest-proxy:latest
-`
+```
 
 📦 Docker Compose
 
-`yaml
+```yaml
 services:
   speedtest-proxy:
     image: ghcr.io/lanlan13-14/speedtest-proxy:latest
@@ -45,7 +45,7 @@ services:
       - PORT=3000
       - DEFAULT_NODE=https://sgp.download.datapacket.com/10000mb.bin
     restart: unless-stopped
-`
+```
 
 ---
 
@@ -53,13 +53,13 @@ services:
 
 基础测速
 
-`bash
+```bash
 curl -L http://localhost:3000/
-`
+```
 
 手动指定节点
 
-`bash
+```bash
 
 新加坡
 curl -L http://localhost:3000/?node=SG
@@ -69,7 +69,7 @@ curl -L http://localhost:3000/?node=US-LAX
 
 法兰克福
 curl -L http://localhost:3000/?node=DE
-`
+```
 
 ---
 
@@ -87,17 +87,17 @@ curl -L http://localhost:3000/?node=DE
 
 📡 节点示例
 
-`bash
+```bash
 curl http://localhost:3000/nodes
-`
+```
 
-`json
+```json
 {
   "SG": "https://sgp.download.datapacket.com/10000mb.bin",
   "JP": "https://tyo.download.datapacket.com/10000mb.bin",
   "US-LAX": "https://lax.download.datapacket.com/10000mb.bin"
 }
-`
+```
 
 ---
 
@@ -128,23 +128,23 @@ curl http://localhost:3000/nodes
 
 - 默认 ip-api.com（无需配置）
 
-`yaml
+```yaml
 
 自动使用，无需额外设置
-`
+```
 
 - ipinfo.io
 
-`yaml
+```yaml
 environment:
   - GEOAPIURL=https://ipinfo.io/{ip}/geo
   - GEOAPITOKEN=yourtokenhere
   - GEOAPIRESPONSE_FORMAT=ipinfo
-`
+```
 
 - 自定义嵌套结构 API
 
-`json
+```json
 {
   "ip": "1.1.1.1",
   "geo": {
@@ -153,34 +153,34 @@ environment:
     "longitude": 000.000
   }
 }
-`
+```
 
-`yaml
+```yaml
 environment:
   - GEOAPIURL=https://your-api.com/ip/{ip}
   - GEOFIELDCOUNTRY=countryCodeAlpha2
   - GEOFIELDLAT=latitude
   - GEOFIELDLON=longitude
-`
+```
 
 - 带认证 Header 的 API
 
-`yaml
+```yaml
 environment:
   - GEOAPIURL=https://your-api.com/geo/{ip}
   - GEOAPITOKEN=yourbearertoken
   - GEOFIELDCOUNTRY=country
   - GEOFIELDLAT=lat
   - GEOFIELDLON=lng
-`
+```
 
 ---
 
 📊 工作原理
 
-`
+```
 用户请求 → 获取 IP → 查询地理位置 → 匹配节点 → 302 重定向
-`
+```
 
 优先级：
 
@@ -192,7 +192,7 @@ environment:
 
 🛠️ 项目结构
 
-`
+```
 Speed-Auto-CDN77/
 ├── .github/workflows/     # GitHub Actions 自动构建
 ├── Dockerfile             # Docker 镜像配置
@@ -201,14 +201,14 @@ Speed-Auto-CDN77/
 ├── .dockerignore          # Docker 忽略文件
 ├── .gitignore             # Git 忽略文件
 └── README.md              # 项目文档
-`
+```
 
 ---
 
 📦 镜像地址
 
-`
+```
 ghcr.io/lanlan13-14/speedtest-proxy:latest
-`
+```
 
 ---
