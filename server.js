@@ -12,7 +12,7 @@ const speedtestNodes = {
   'AU': 'https://syd.download.datapacket.com/10000mb.bin',
   'NZ': 'https://akl.download.datapacket.com/10000mb.bin',
   'AU-MEL': 'https://mel.download.datapacket.com/10000mb.bin',
-  
+
   // 美洲
   'US-SJC': 'https://sjc.download.datapacket.com/10000mb.bin',
   'US-LAX': 'https://lax.download.datapacket.com/10000mb.bin',
@@ -65,6 +65,34 @@ const speedtestNodes = {
 };
 
 const DEFAULT_NODE = process.env.DEFAULT_NODE || 'https://sgp.download.datapacket.com/10000mb.bin';
+
+// ================== 地理位置 API 配置 ==================
+// 支持自定义 API，通过环境变量配置
+// GEO_API_URL: API 地址，支持 {ip} 占位符
+// GEO_API_RESPONSE_PATH: 响应中提取数据的路径（可选）
+//
+// 默认使用 ip-api.com
+// 示例1 - ip-api.com (默认):
+//   GEO_API_URL=http://ip-api.com/json/{ip}?fields=status,countryCode,lat,lon
+//
+// 示例2 - ipinfo.io (需要 token):
+//   GEO_API_URL=https://ipinfo.io/{ip}/geo
+//   GEO_API_TOKEN=your_token
+//
+// 示例3 - 自定义 API 返回格式:
+//   GEO_API_URL=https://your-api.com/geo/{ip}
+//   需要返回包含 country, lat, lon 字段的 JSON
+
+const GEO_API_URL = process.env.GEO_API_URL || 'http://ip-api.com/json/{ip}?fields=status,countryCode,lat,lon';
+const GEO_API_TOKEN = process.env.GEO_API_TOKEN || '';
+const GEO_API_RESPONSE_FORMAT = process.env.GEO_API_RESPONSE_FORMAT || 'default'; // default, ipinfo, custom
+
+// 自定义字段映射（如果 API 返回的字段名不同）
+const GEO_FIELD_MAPPING = {
+  country: process.env.GEO_FIELD_COUNTRY || 'countryCode',
+  latitude: process.env.GEO_FIELD_LAT || 'lat',
+  longitude: process.env.GEO_FIELD_LON || 'lon'
+};
 
 // 节点坐标
 const nodeCoords = {
@@ -131,21 +159,53 @@ function findNearest(lat, lon) {
   return bestUrl;
 }
 
+// 解析不同 API 的响应格式
+function parseGeoResponse(data, format) {
+  if (format === 'ipinfo') {
+    // ipinfo.io 格式
+    return {
+      country: data.country,
+      latitude: data.loc ? parseFloat(data.loc.split(',')[0]) : NaN,
+      longitude: data.loc ? parseFloat(data.loc.split(',')[1]) : NaN
+    };
+  }
+  
+  // 默认格式（ip-api.com 或自定义映射）
+  const country = data[GEO_FIELD_MAPPING.country];
+  const latitude = parseFloat(data[GEO_FIELD_MAPPING.latitude]);
+  const longitude = parseFloat(data[GEO_FIELD_MAPPING.longitude]);
+  
+  return { country, latitude, longitude };
+}
+
 async function getGeoFromIP(ip) {
   try {
-    // 使用 ip-api.com，支持 IPv4 和 IPv6
-    const response = await fetch(`http://ip-api.com/json/${ip}?fields=status,countryCode,lat,lon`);
+    // 替换 URL 中的 {ip} 占位符
+    let apiUrl = GEO_API_URL.replace('{ip}', ip);
+    
+    // 构建请求头
+    const headers = {};
+    if (GEO_API_TOKEN) {
+      headers['Authorization'] = `Bearer ${GEO_API_TOKEN}`;
+    }
+    
+    const response = await fetch(apiUrl, { headers });
     const data = await response.json();
-    if (data.status === 'success') {
-      return {
-        country: data.countryCode,
-        latitude: data.lat,
-        longitude: data.lon
-      };
+    
+    // 检查 ip-api.com 的 status 字段
+    if (data.status === 'fail') {
+      throw new Error('Geo API returned fail');
+    }
+    
+    const geo = parseGeoResponse(data, GEO_API_RESPONSE_FORMAT);
+    
+    if (geo.country && !isNaN(geo.latitude) && !isNaN(geo.longitude)) {
+      return geo;
     }
   } catch (error) {
-    console.error('Geo lookup failed:', error.message);
+    console.error(`Geo lookup failed for ${ip}:`, error.message);
   }
+  
   return { country: '', latitude: NaN, longitude: NaN };
 }
 
@@ -153,11 +213,11 @@ function getClientIP(req) {
   // 支持 X-Forwarded-For（代理/负载均衡场景）
   const xff = req.headers['x-forwarded-for'];
   if (xff) return xff.split(',')[0].trim();
-  
+
   // 支持 CloudFlare
   const cfIP = req.headers['cf-connecting-ip'];
   if (cfIP) return cfIP;
-  
+
   // 回退到直接连接 IP
   return req.socket.remoteAddress;
 }
@@ -174,7 +234,7 @@ app.get('/', async (req, res) => {
   // 获取客户端 IP
   const clientIP = getClientIP(req);
   let geo = { country: '', latitude: NaN, longitude: NaN };
-  
+
   // 查询地理位置（跳过本地 IP）
   if (clientIP && !clientIP.startsWith('127.') && clientIP !== '::1') {
     geo = await getGeoFromIP(clientIP);
@@ -204,7 +264,8 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    defaultNode: DEFAULT_NODE
+    defaultNode: DEFAULT_NODE,
+    geoApi: GEO_API_URL.replace(/token=[^&]*/, 'token=***') // 隐藏 token
   });
 });
 
@@ -221,6 +282,7 @@ app.get('/debug', async (req, res) => {
     clientIP,
     geo,
     defaultNode: DEFAULT_NODE,
+    geoApiConfigured: GEO_API_URL,
     headers: req.headers
   });
 });
@@ -229,4 +291,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`SpeedTest Proxy running on port ${PORT}`);
   console.log(`Default node: ${DEFAULT_NODE}`);
+  console.log(`Geo API: ${GEO_API_URL.replace(/token=[^&]*/, 'token=***')}`);
 });
