@@ -130,16 +130,21 @@ function getDistance(lat1, lon1, lat2, lon2) {
 function findNearest(lat, lon) {
   let min = Infinity;
   let bestUrl = DEFAULT_NODE;
+  let bestCode = 'DEFAULT';
+  
   for (const [code, coord] of Object.entries(nodeCoords)) {
     const d = getDistance(lat, lon, coord.lat, coord.lon);
     if (d < min) {
       min = d;
+      bestCode = code;
       const matchedKey = Object.keys(speedtestNodes).find(key =>
         key.includes(code) || speedtestNodes[key].includes(code.toLowerCase())
       );
       if (matchedKey) bestUrl = speedtestNodes[matchedKey];
     }
   }
+  
+  console.log(`[Distance] Nearest: ${bestCode}, ${min.toFixed(2)}km`);
   return bestUrl;
 }
 
@@ -210,7 +215,7 @@ function getClientIP(req) {
   return req.socket.remoteAddress;
 }
 
-// 路由：重定向到测速节点
+// 路由：重定向到测速节点（经纬度优先）
 app.get('/', async (req, res) => {
   const overrideNode = req.query.node;
   if (overrideNode && speedtestNodes[overrideNode.toUpperCase()]) {
@@ -227,14 +232,19 @@ app.get('/', async (req, res) => {
 
   let targetUrl = DEFAULT_NODE;
 
-  if (geo.country && speedtestNodes[geo.country]) {
-    targetUrl = speedtestNodes[geo.country];
-    console.log(`Country match: ${geo.country} -> ${targetUrl}`);
-  } else if (!isNaN(geo.latitude) && !isNaN(geo.longitude)) {
+  // 🎯 优先使用经纬度匹配（更精确）
+  if (!isNaN(geo.latitude) && !isNaN(geo.longitude) && geo.latitude !== 0 && geo.longitude !== 0) {
     targetUrl = findNearest(geo.latitude, geo.longitude);
-    console.log(`Nearest match: ${geo.latitude},${geo.longitude} -> ${targetUrl}`);
-  } else {
-    console.log(`Fallback to default: ${DEFAULT_NODE}`);
+    console.log(`✅ Nearest match (priority): ${geo.latitude},${geo.longitude} -> ${targetUrl}`);
+  }
+  // 备选：国家匹配
+  else if (geo.country && speedtestNodes[geo.country]) {
+    targetUrl = speedtestNodes[geo.country];
+    console.log(`⚠️ Country match (fallback): ${geo.country} -> ${targetUrl}`);
+  }
+  // 兜底：默认节点
+  else {
+    console.log(`❌ Fallback to default: ${DEFAULT_NODE}`);
   }
 
   res.redirect(targetUrl);
@@ -270,4 +280,5 @@ app.listen(PORT, () => {
   console.log(`SpeedTest Proxy running on port ${PORT}`);
   console.log(`Default node: ${DEFAULT_NODE}`);
   console.log(`Geo API: ${GEO_API_URL.replace(/token=[^&]*/, 'token=***')}`);
+  console.log(`Match priority: Lat/Lon > Country > Default`);
 });
