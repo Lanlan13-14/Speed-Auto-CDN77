@@ -67,27 +67,11 @@ const speedtestNodes = {
 const DEFAULT_NODE = process.env.DEFAULT_NODE || 'https://sgp.download.datapacket.com/10000mb.bin';
 
 // ================== 地理位置 API 配置 ==================
-// 支持自定义 API，通过环境变量配置
-// GEO_API_URL: API 地址，支持 {ip} 占位符
-// GEO_API_RESPONSE_PATH: 响应中提取数据的路径（可选）
-//
-// 默认使用 ip-api.com
-// 示例1 - ip-api.com (默认):
-//   GEO_API_URL=http://ip-api.com/json/{ip}?fields=status,countryCode,lat,lon
-//
-// 示例2 - ipinfo.io (需要 token):
-//   GEO_API_URL=https://ipinfo.io/{ip}/geo
-//   GEO_API_TOKEN=your_token
-//
-// 示例3 - 自定义 API 返回格式:
-//   GEO_API_URL=https://your-api.com/geo/{ip}
-//   需要返回包含 country, lat, lon 字段的 JSON
-
 const GEO_API_URL = process.env.GEO_API_URL || 'http://ip-api.com/json/{ip}?fields=status,countryCode,lat,lon';
 const GEO_API_TOKEN = process.env.GEO_API_TOKEN || '';
-const GEO_API_RESPONSE_FORMAT = process.env.GEO_API_RESPONSE_FORMAT || 'default'; // default, ipinfo, custom
+const GEO_API_RESPONSE_FORMAT = process.env.GEO_API_RESPONSE_FORMAT || 'default';
 
-// 自定义字段映射（如果 API 返回的字段名不同）
+// 自定义字段映射（支持点号路径，如 geo.countryCodeAlpha2）
 const GEO_FIELD_MAPPING = {
   country: process.env.GEO_FIELD_COUNTRY || 'countryCode',
   latitude: process.env.GEO_FIELD_LAT || 'lat',
@@ -159,122 +143,116 @@ function findNearest(lat, lon) {
   return bestUrl;
 }
 
-// 解析不同 API 的响应格式
+// 新增：通过路径获取对象属性（支持点号路径）
+function getNestedValue(obj, path) {
+  if (!path) return undefined;
+  if (path.includes('.')) {
+    const parts = path.split('.');
+    let current = obj;
+    for (const part of parts) {
+      if (current === null || current === undefined) return undefined;
+      current = current[part];
+    }
+    return current;
+  }
+  return obj[path];
+}
+
+// 解析不同 API 的响应格式（增强版，支持嵌套路径）
 function parseGeoResponse(data, format) {
   if (format === 'ipinfo') {
-    // ipinfo.io 格式
     return {
       country: data.country,
       latitude: data.loc ? parseFloat(data.loc.split(',')[0]) : NaN,
       longitude: data.loc ? parseFloat(data.loc.split(',')[1]) : NaN
     };
   }
-  
-  // 默认格式（ip-api.com 或自定义映射）
-  const country = data[GEO_FIELD_MAPPING.country];
-  const latitude = parseFloat(data[GEO_FIELD_MAPPING.latitude]);
-  const longitude = parseFloat(data[GEO_FIELD_MAPPING.longitude]);
-  
+
+  const country = getNestedValue(data, GEO_FIELD_MAPPING.country);
+  const latitude = parseFloat(getNestedValue(data, GEO_FIELD_MAPPING.latitude));
+  const longitude = parseFloat(getNestedValue(data, GEO_FIELD_MAPPING.longitude));
+
   return { country, latitude, longitude };
 }
 
 async function getGeoFromIP(ip) {
   try {
-    // 替换 URL 中的 {ip} 占位符
     let apiUrl = GEO_API_URL.replace('{ip}', ip);
-    
-    // 构建请求头
     const headers = {};
     if (GEO_API_TOKEN) {
       headers['Authorization'] = `Bearer ${GEO_API_TOKEN}`;
     }
-    
+
     const response = await fetch(apiUrl, { headers });
     const data = await response.json();
-    
-    // 检查 ip-api.com 的 status 字段
+
     if (data.status === 'fail') {
       throw new Error('Geo API returned fail');
     }
-    
+
     const geo = parseGeoResponse(data, GEO_API_RESPONSE_FORMAT);
-    
+
     if (geo.country && !isNaN(geo.latitude) && !isNaN(geo.longitude)) {
       return geo;
     }
   } catch (error) {
     console.error(`Geo lookup failed for ${ip}:`, error.message);
   }
-  
+
   return { country: '', latitude: NaN, longitude: NaN };
 }
 
 function getClientIP(req) {
-  // 支持 X-Forwarded-For（代理/负载均衡场景）
   const xff = req.headers['x-forwarded-for'];
   if (xff) return xff.split(',')[0].trim();
-
-  // 支持 CloudFlare
   const cfIP = req.headers['cf-connecting-ip'];
   if (cfIP) return cfIP;
-
-  // 回退到直接连接 IP
   return req.socket.remoteAddress;
 }
 
 // 路由：重定向到测速节点
 app.get('/', async (req, res) => {
-  // 手动指定节点
   const overrideNode = req.query.node;
   if (overrideNode && speedtestNodes[overrideNode.toUpperCase()]) {
     console.log(`Manual override: ${overrideNode.toUpperCase()}`);
     return res.redirect(speedtestNodes[overrideNode.toUpperCase()]);
   }
 
-  // 获取客户端 IP
   const clientIP = getClientIP(req);
   let geo = { country: '', latitude: NaN, longitude: NaN };
 
-  // 查询地理位置（跳过本地 IP）
   if (clientIP && !clientIP.startsWith('127.') && clientIP !== '::1') {
     geo = await getGeoFromIP(clientIP);
   }
 
   let targetUrl = DEFAULT_NODE;
 
-  // 优先国家匹配
   if (geo.country && speedtestNodes[geo.country]) {
     targetUrl = speedtestNodes[geo.country];
     console.log(`Country match: ${geo.country} -> ${targetUrl}`);
-  }
-  // 最近节点匹配
-  else if (!isNaN(geo.latitude) && !isNaN(geo.longitude)) {
+  } else if (!isNaN(geo.latitude) && !isNaN(geo.longitude)) {
     targetUrl = findNearest(geo.latitude, geo.longitude);
     console.log(`Nearest match: ${geo.latitude},${geo.longitude} -> ${targetUrl}`);
-  }
-  else {
+  } else {
     console.log(`Fallback to default: ${DEFAULT_NODE}`);
   }
 
   res.redirect(targetUrl);
 });
 
-// 健康检查端点
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
     defaultNode: DEFAULT_NODE,
-    geoApi: GEO_API_URL.replace(/token=[^&]*/, 'token=***') // 隐藏 token
+    geoApi: GEO_API_URL.replace(/token=[^&]*/, 'token=***')
   });
 });
 
-// 节点列表 API
 app.get('/nodes', (req, res) => {
   res.json(speedtestNodes);
 });
 
-// 调试端点：查看当前请求的 IP 和地理位置
 app.get('/debug', async (req, res) => {
   const clientIP = getClientIP(req);
   const geo = await getGeoFromIP(clientIP);
