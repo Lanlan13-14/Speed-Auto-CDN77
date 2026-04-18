@@ -131,7 +131,7 @@ function findNearest(lat, lon) {
   let min = Infinity;
   let bestUrl = DEFAULT_NODE;
   let bestCode = 'DEFAULT';
-  
+
   for (const [code, coord] of Object.entries(nodeCoords)) {
     const d = getDistance(lat, lon, coord.lat, coord.lon);
     if (d < min) {
@@ -143,12 +143,12 @@ function findNearest(lat, lon) {
       if (matchedKey) bestUrl = speedtestNodes[matchedKey];
     }
   }
-  
+
   console.log(`[Distance] Nearest: ${bestCode}, ${min.toFixed(2)}km`);
   return bestUrl;
 }
 
-// 新增：通过路径获取对象属性（支持点号路径）
+// 通过路径获取对象属性（支持点号路径）
 function getNestedValue(obj, path) {
   if (!path) return undefined;
   if (path.includes('.')) {
@@ -163,7 +163,7 @@ function getNestedValue(obj, path) {
   return obj[path];
 }
 
-// 解析不同 API 的响应格式（增强版，支持嵌套路径）
+// 解析不同 API 的响应格式
 function parseGeoResponse(data, format) {
   if (format === 'ipinfo') {
     return {
@@ -180,14 +180,24 @@ function parseGeoResponse(data, format) {
   return { country, latitude, longitude };
 }
 
+// 🔧 修复：正确传递客户端 IP 到 API
 async function getGeoFromIP(ip) {
   try {
-    let apiUrl = GEO_API_URL.replace('{ip}', ip);
+    let apiUrl = GEO_API_URL;
+    // 如果 URL 中包含 {ip} 占位符，则替换；否则将 IP 作为查询参数 ?ip= 附加
+    if (apiUrl.includes('{ip}')) {
+      apiUrl = apiUrl.replace('{ip}', ip);
+    } else {
+      const separator = apiUrl.includes('?') ? '&' : '?';
+      apiUrl = `${apiUrl}${separator}ip=${encodeURIComponent(ip)}`;
+    }
+    
     const headers = {};
     if (GEO_API_TOKEN) {
       headers['Authorization'] = `Bearer ${GEO_API_TOKEN}`;
     }
 
+    console.log(`[GeoLookup] Querying ${apiUrl} for client IP ${ip}`);
     const response = await fetch(apiUrl, { headers });
     const data = await response.json();
 
@@ -196,6 +206,7 @@ async function getGeoFromIP(ip) {
     }
 
     const geo = parseGeoResponse(data, GEO_API_RESPONSE_FORMAT);
+    console.log(`[GeoLookup] Result: country=${geo.country}, lat=${geo.latitude}, lon=${geo.longitude}`);
 
     if (geo.country && !isNaN(geo.latitude) && !isNaN(geo.longitude)) {
       return geo;
@@ -207,12 +218,27 @@ async function getGeoFromIP(ip) {
   return { country: '', latitude: NaN, longitude: NaN };
 }
 
+// 🔧 修复：优先使用 X-Real-IP，然后 X-Forwarded-For
 function getClientIP(req) {
+  // 1. Nginx 传递的真实 IP
+  const realIP = req.headers['x-real-ip'];
+  if (realIP) return realIP;
+  
+  // 2. X-Forwarded-For 第一个
   const xff = req.headers['x-forwarded-for'];
   if (xff) return xff.split(',')[0].trim();
+  
+  // 3. Cloudflare
   const cfIP = req.headers['cf-connecting-ip'];
   if (cfIP) return cfIP;
-  return req.socket.remoteAddress;
+  
+  // 4. 直连 IP（过滤 Docker 内部和本地）
+  const remoteAddr = req.socket.remoteAddress;
+  if (remoteAddr && !remoteAddr.startsWith('::ffff:172.') && !remoteAddr.startsWith('127.') && remoteAddr !== '::1') {
+    return remoteAddr;
+  }
+  
+  return null;
 }
 
 // 路由：重定向到测速节点（经纬度优先）
@@ -228,11 +254,13 @@ app.get('/', async (req, res) => {
 
   if (clientIP && !clientIP.startsWith('127.') && clientIP !== '::1') {
     geo = await getGeoFromIP(clientIP);
+  } else {
+    console.log(`Invalid client IP: ${clientIP}, skipping geo lookup`);
   }
 
   let targetUrl = DEFAULT_NODE;
 
-  // 🎯 优先使用经纬度匹配（更精确）
+  // 🎯 优先使用经纬度匹配
   if (!isNaN(geo.latitude) && !isNaN(geo.longitude) && geo.latitude !== 0 && geo.longitude !== 0) {
     targetUrl = findNearest(geo.latitude, geo.longitude);
     console.log(`✅ Nearest match (priority): ${geo.latitude},${geo.longitude} -> ${targetUrl}`);
